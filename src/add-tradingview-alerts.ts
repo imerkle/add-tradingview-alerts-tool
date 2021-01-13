@@ -4,7 +4,12 @@ import fs from "fs"
 import puppeteer from "puppeteer"
 import YAML from "yaml"
 
-
+const DELAYS = {
+    LONG: 3000,
+    MED: 1500,
+    SHORT: 800,
+    VERYSHORT: 500,
+}
 function delay(time) {
     return new Promise(function (resolve) {
         setTimeout(resolve, time)
@@ -36,53 +41,95 @@ const fetchFirstXPath = async (selector: string, page, timeout = 20000) => {
 
 // made using XPath Generator 1.1.0
 
-const addAlert = async (symbol: string, interval: String, quote: string, base: string, rowName: string, alertConfig: any, page) => {
+const addAlert = async (symbol: string, quote: string, base: string, rowName: string, alertConfig: any, page) => {
 
 
-    const { indicator, signal, option, message } = alertConfig
+    const { interval, indicator, indicator_name, signal, option, message } = alertConfig
+    const alertName = (indicator_name || indicator) + "_" + symbol + "_" + interval;
 
     //await page.waitForXPath('//*[@id="header-toolbar-symbol-search"]/div/input')
 
 
     const symbolHeaderInput = await fetchFirstXPath('//div[@id="header-toolbar-symbol-search"]', page)
     await symbolHeaderInput.click()
-    await delay(1000);
+    await delay(DELAYS.SHORT);
     const symbolInput = await fetchFirstXPath('//input[@data-role=\'search\']', page)
     await symbolInput.type(`  ${symbol}${String.fromCharCode(13)}`)
-    await delay(9000);
+    await delay(DELAYS.LONG);
 
+    let alertItem = undefined;
+    try {
+        alertItem = await fetchFirstXPath(`//div[@data-name='alert-item-name' and contains(text(), '${alertName}')]`, page, 5000)
+    } catch (e) {
+    }
+    if (alertItem != undefined) {
+        return;
+    }
 
-    const intervalHeaderInput = await fetchFirstXPath('//div[@id="header-toolbar-intervals"]', page)
-    await intervalHeaderInput.click()
-    await delay(1000);
-    const menuInnerDropDownDiv = await fetchFirstXPath(`//*[@data-value='${interval}']`, page);
-    const parentElement = (await menuInnerDropDownDiv.$x('..'))[0];
-    parentElement.click();
-    await delay(5000);
-
+    if (interval) {
+        const intervalHeaderInput = await fetchFirstXPath('//div[@id="header-toolbar-intervals"]', page)
+        await intervalHeaderInput.click()
+        await delay(DELAYS.SHORT);
+        const menuInnerDropDownDiv = await fetchFirstXPath(`//*[@data-value='${interval}']`, page);
+        const parentElement = (await menuInnerDropDownDiv.$x('..'))[0];
+        parentElement.click();
+        await delay(DELAYS.LONG);
+    }
 
     const alertButton = await fetchFirstXPath('//*[@id="header-toolbar-alerts"]', page)
-
     await alertButton.click()
+    await delay(DELAYS.SHORT);
 
+    if (indicator) {
+        const conditionDropDown = await fetchFirstXPath("//*[@class='tv-alert-dialog__group-item tv-alert-dialog__group-item--left js-main-series-select-wrap']/*[@class='tv-control-select__wrap tv-dropdown-behavior tv-control-select--size_small' and 1]/*[@class='tv-control-select__control tv-dropdown-behavior__button' and 1]", page)
+        conditionDropDown.click()
+        await delay(DELAYS.VERYSHORT);
 
-    await delay(5000);
-    const conditionDropDown = await fetchFirstXPath("//*[@class='tv-alert-dialog__group-item tv-alert-dialog__group-item--left js-main-series-select-wrap']/*[@class='tv-control-select__wrap tv-dropdown-behavior tv-control-select--size_small' and 1]/*[@class='tv-control-select__control tv-dropdown-behavior__button' and 1]", page)
+        const optionMTF = await fetchFirstXPath(`//*[@class='tv-control-select__option-wrap' and contains(text(), '${indicator}')]`, page)
+        optionMTF.click()
+        await delay(DELAYS.VERYSHORT);
+    }
+    if (signal) {
+        const signalDropDown = await fetchFirstXPath("//*[@class='tv-control-fieldset__value tv-alert-dialog__fieldset-value js-condition-operator-input-wrap']/span[@class='tv-control-select__wrap tv-dropdown-behavior tv-control-select--size_small' and 1]/span[@class='tv-control-select__control tv-dropdown-behavior__button' and 1]", page)
+        signalDropDown.click()
+        await delay(DELAYS.VERYSHORT);
+        const optionSignal = await fetchFirstXPath(`//*[@class='tv-control-select__option-wrap' and contains(text(), '${signal}')]`, page)
+        optionSignal.click()
 
-    conditionDropDown.click()
-    await delay(1000);
+        await delay(DELAYS.SHORT);
+    }
 
-    const optionMTF = await fetchFirstXPath(`//*[@class='tv-control-select__option-wrap' and contains(text(), '${indicator}')]`, page)
-    optionMTF.click()
+    if (alertConfig.textinputs) {
+        for (const textinput of alertConfig.textinputs) {
+            const inputtextbox = await fetchFirstXPath(`//*[@name='${textinput.name}']`, page,)
+            inputtextbox.click({ clickCount: 3 })
+            await delay(DELAYS.SHORT);
+            await inputtextbox.type(textinput.value)
+            await delay(DELAYS.MED);
+        }
+        await delay(DELAYS.SHORT);
+    }
+    if (alertConfig.webhookurl) {
+        const inputtextbox = await fetchFirstXPath(`//*[@name='webhook-url']`, page,)
+        inputtextbox.click({ clickCount: 3 })
+        await delay(DELAYS.SHORT);
+        await inputtextbox.type(alertConfig.webhookurl)
+        await delay(DELAYS.MED);
+    }
+    if (alertConfig.dropdowns) {
+        for (const dropdown of alertConfig.dropdowns) {
 
-    await delay(1000);
+            await delay(DELAYS.VERYSHORT);
+            const signalDropDown = await fetchFirstXPath(dropdown.xpath, page)
+            signalDropDown.click()
 
-    const signalDropDown = await fetchFirstXPath("//*[@class='tv-control-fieldset__value tv-alert-dialog__fieldset-value js-condition-operator-input-wrap']/span[@class='tv-control-select__wrap tv-dropdown-behavior tv-control-select--size_small' and 1]/span[@class='tv-control-select__control tv-dropdown-behavior__button' and 1]", page)
-    signalDropDown.click()
-
-    await delay(1000);
-    const optionSignal = await fetchFirstXPath(`//*[@class='tv-control-select__option-wrap' and contains(text(), '${signal}')]`, page)
-    optionSignal.click()
+            await delay(DELAYS.VERYSHORT);
+            const optionSignal = await fetchFirstXPath(`${dropdown.xpath}//*[@class='tv-control-select__option-wrap' and contains(text(), '${dropdown.value}')]`, page)
+            optionSignal.click()
+        }
+        await delay(DELAYS.SHORT);
+    }
+    //
 
     await delay(1000);
     const freqButton = await fetchFirstXPath(`//*[text()='${option}']`, page)
@@ -90,14 +137,14 @@ const addAlert = async (symbol: string, interval: String, quote: string, base: s
 
     await delay(1000);
 
-    const alertName = (rowName || alertConfig.name || "").toString().replace(/{{symbol}}/g, symbol).replace(/{{quote}}/g, quote).replace().replace(/{{base}}/g, base).replace()
+    //const alertName = (rowName || alertConfig.name || "").toString().replace(/{{symbol}}/g, symbol).replace(/{{quote}}/g, quote).replace().replace(/{{base}}/g, base).replace()
 
     if (!!alertName) {
         const nameInput = await fetchFirstXPath("//input[@name='alert-name']", page)
         nameInput.click()
         await nameInput.press('Backspace');
         await nameInput.type(alertName)
-        await delay(1000);
+        await delay(DELAYS.SHORT);
 
     }
 
@@ -107,24 +154,24 @@ const addAlert = async (symbol: string, interval: String, quote: string, base: s
 
     messageTextarea.click({ clickCount: 3 })
 
-    await delay(500);
+    await delay(DELAYS.VERYSHORT);
     await messageTextarea.press('Backspace');
-    await delay(500);
+    await delay(DELAYS.VERYSHORT);
 
     const messageText = message.toString().replace(/{{quote}}/g, quote).replace().replace(/{{base}}/g, base).replace()
 
     await messageTextarea.type(messageText)
 
-    await delay(1000);
+    await delay(DELAYS.SHORT);
     const continueButton = await fetchFirstXPath("//span[@class='tv-button__loader']", page)
     continueButton.click()
 
-    await delay(1500);
+    await delay(DELAYS.SHORT);
 
     try {
         const continueAnywayButton = await fetchFirstXPath("//*[text()='Continue anyway']", page, 3000)
         continueAnywayButton.click()
-        await delay(5000);
+        await delay(DELAYS.LONG);
     } catch (error) {
         //must not be alert on an indicator
     }
@@ -147,7 +194,7 @@ const main = async () => {
 
     const config = YAML.parse(configString)
 
-    const { alert: alertConfig } = config
+    const { alerts: alertConfigs } = config
 
     //console.log("alertConfig", alertConfig.message)
 
@@ -160,7 +207,7 @@ const main = async () => {
         ]
     })
 
-    await delay(4000)
+    await delay(DELAYS.LONG)
 
     const page = (await browser.pages())[0];
 
@@ -177,7 +224,7 @@ const main = async () => {
         await delay(1000000)
 
     } else {
-        await delay(3000)
+        await delay(DELAYS.SHORT)
 
         const blackListRows = await readFilePromise(config.files.exclude)
 
@@ -200,8 +247,10 @@ const main = async () => {
             }
 
             console.log(`Adding symbol: ${row.symbol}  ( ${row.base} priced in ${row.quote} )`)
-            await delay(5000)
-            await addAlert(row.symbol, config.interval, row.quote, row.base, row.name, alertConfig, page)
+            await delay(DELAYS.SHORT)
+            for (const alertConfig of alertConfigs) {
+                await addAlert(row.symbol, row.quote, row.base, row.name, alertConfig, page)
+            }
         }
     }
 
